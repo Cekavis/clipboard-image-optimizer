@@ -31,19 +31,45 @@ fn process_clipboard() {
         log::info!("Got image from clipboard: {}x{}", image.width, image.height);
         let app_data_dir = APP_DATA_DIR.get().expect("App data directory not set");
         std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data directory");
-        let image_path = app_data_dir.join("clipboard_image.png");
-        log::info!("Saving image to {:?}", image_path);
-        
-        let rgba_image = RgbaImage::from_raw(
-            image.width as u32,
-            image.height as u32,
-            image.bytes.to_vec(),
-        ).expect("Failed to create image");
-        
-        rgba_image.save(&image_path).expect("Failed to save image");
-        log::info!("Image saved to clipboard_image.png");
+        let image_path = app_data_dir.join("optimized.jpg");
+
+        save_image(
+            image.width,
+            image.height,
+            image.bytes
+                .chunks(4)
+                .flat_map(|pixel| pixel[..3].to_vec())
+                .collect(),
+            &image_path,
+        );
     } else {
         log::info!("Clipboard does not contain an image.");
+    }
+}
+
+fn save_image(width: usize, height: usize, image_data: Vec<u8>, path: &PathBuf) {
+    assert_eq!(image_data.len(), width * height * 3);
+
+    let result = std::panic::catch_unwind(|| -> std::io::Result<Vec<u8>> {
+        let mut comp = mozjpeg::Compress::new(mozjpeg::ColorSpace::JCS_RGB);
+
+        comp.set_size(width, height);
+        let mut comp = comp.start_compress(Vec::new())?;
+
+        comp.write_scanlines(&&image_data[..])?;
+
+        let writer = comp.finish()?;
+        Ok(writer)
+    });
+
+    match result {
+        Ok(Ok(jpeg_data)) => {
+            std::fs::write(path, jpeg_data).expect("Failed to write JPEG file");
+            log::info!("Optimized image saved to {:?}", path);
+        }
+        _ => {
+            log::error!("Failed to compress image");
+        }
     }
 }
 
