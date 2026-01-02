@@ -2,13 +2,13 @@ use clipboard_master::{CallbackResult, ClipboardHandler, Master};
 use clipboard_win::{get_clipboard, formats};
 use arboard::Clipboard;
 use tauri::Manager;
-use image::RgbaImage;
 
 use std::io;
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{OnceLock, Mutex};
 
 static APP_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+static PROCESSING_LOCK: Mutex<()> = Mutex::new(());
 
 struct Handler;
 
@@ -26,22 +26,36 @@ impl ClipboardHandler for Handler {
 }
 
 fn process_clipboard() {
-    let mut clipboard = Clipboard::new().unwrap();
-    if let Ok(image) = clipboard.get_image() {
-        log::info!("Got image from clipboard: {}x{}", image.width, image.height);
-        let app_data_dir = APP_DATA_DIR.get().expect("App data directory not set");
-        std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data directory");
-        let image_path = app_data_dir.join("optimized.jpg");
+    let app_data_dir = APP_DATA_DIR.get().expect("App data directory not set");
+    std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data directory");
 
-        save_image(
-            image.width,
-            image.height,
-            image.bytes
-                .chunks(4)
-                .flat_map(|pixel| pixel[..3].to_vec())
-                .collect(),
-            &image_path,
-        );
+    let mut clipboard = Clipboard::new().unwrap();
+    if let Ok(files) = clipboard.get().file_list() {
+        if files.len() == 1 && files[0].parent() == Some(app_data_dir) {
+            log::info!("Skipping optimized image.");
+            return;
+        }
+    }
+    if let Ok(image) = clipboard.get_image() {
+        if let Ok(_guard) = PROCESSING_LOCK.try_lock() {
+            log::info!("Got image from clipboard: {}x{}", image.width, image.height);
+            let image_path = app_data_dir.join("optimized.jpg");
+
+            save_image(
+                image.width,
+                image.height,
+                image.bytes
+                    .chunks(4)
+                    .flat_map(|pixel| pixel[..3].to_vec())
+                    .collect(),
+                &image_path,
+            );
+
+            clipboard.clear().expect("Failed to clear clipboard");
+            clipboard.set().file_list(&[image_path]).expect("Failed to set clipboard file list");
+        } else {
+            log::info!("Image processing is already in progress, skipping.");
+        }
     } else {
         log::info!("Clipboard does not contain an image.");
     }
@@ -52,6 +66,7 @@ fn save_image(width: usize, height: usize, image_data: Vec<u8>, path: &PathBuf) 
 
     let result = std::panic::catch_unwind(|| -> std::io::Result<Vec<u8>> {
         let mut comp = mozjpeg::Compress::new(mozjpeg::ColorSpace::JCS_RGB);
+        comp.set_quality(60.0);
 
         comp.set_size(width, height);
         let mut comp = comp.start_compress(Vec::new())?;
