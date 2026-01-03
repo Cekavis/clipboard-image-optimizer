@@ -5,6 +5,7 @@ use tauri::{
     tray::TrayIconBuilder,
     Manager,
 };
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 use std::io;
 use std::path::PathBuf;
@@ -68,6 +69,23 @@ fn process_clipboard() {
     }
 }
 
+#[tauri::command]
+fn set_auto_start(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let autostart_manager = app.autolaunch();
+    if enabled {
+        autostart_manager.enable().map_err(|e| e.to_string())?;
+    } else {
+        autostart_manager.disable().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn get_auto_start(app: tauri::AppHandle) -> Result<bool, String> {
+    let autostart_manager = app.autolaunch();
+    autostart_manager.is_enabled().map_err(|e| e.to_string())
+}
+
 fn save_image(width: usize, height: usize, image_data: Vec<u8>, path: &PathBuf) {
     assert_eq!(image_data.len(), width * height * 3);
 
@@ -103,7 +121,11 @@ pub fn run() {
     });
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_autostart::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec!["--hidden"]),
+        ))
+        .invoke_handler(tauri::generate_handler![set_auto_start, get_auto_start])
         .setup(|app| {
             // Get app data directory
             let dir = app

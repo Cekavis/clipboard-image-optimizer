@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from "vue";
+import { invoke } from "@tauri-apps/api/core";
 
 type Theme = "light" | "dark" | "auto";
 
@@ -25,23 +26,28 @@ watch(theme, (newTheme) => {
 });
 
 // Watch for auto-start changes
-watch(autoStart, (newValue) => {
-  localStorage.setItem("autoStart", String(newValue));
-  // TODO: Invoke Tauri command to set auto-start
-  // invoke("set_auto_start", { enabled: newValue });
+watch(autoStart, async (newValue) => {
+  try {
+    await invoke("set_auto_start", { enabled: newValue });
+    localStorage.setItem("autoStart", String(newValue));
+  } catch (error) {
+    console.error("Failed to set auto-start:", error);
+  }
 });
 
 // Load saved settings on mount
-onMounted(() => {
+onMounted(async () => {
   const savedTheme = localStorage.getItem("theme") as Theme | null;
   if (savedTheme) {
     theme.value = savedTheme;
   }
   applyTheme(theme.value);
 
-  const savedAutoStart = localStorage.getItem("autoStart");
-  if (savedAutoStart !== null) {
-    autoStart.value = savedAutoStart === "true";
+  // Load autostart state from the system
+  try {
+    autoStart.value = await invoke<boolean>("get_auto_start");
+  } catch (error) {
+    console.error("Failed to get auto-start state:", error);
   }
 
   // Listen for system theme changes when in auto mode
