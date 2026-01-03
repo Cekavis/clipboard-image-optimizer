@@ -1,5 +1,4 @@
 use clipboard_master::{CallbackResult, ClipboardHandler, Master};
-use clipboard_win::{get_clipboard, formats};
 use arboard::Clipboard;
 use tauri::Manager;
 
@@ -88,13 +87,6 @@ fn save_image(width: usize, height: usize, image_data: Vec<u8>, path: &PathBuf) 
     }
 }
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    log::info!("234");
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     std::thread::spawn(|| {
@@ -113,7 +105,6 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
