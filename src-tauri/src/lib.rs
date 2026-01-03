@@ -1,14 +1,14 @@
-use clipboard_master::{CallbackResult, ClipboardHandler, Master};
 use arboard::Clipboard;
+use clipboard_master::{CallbackResult, ClipboardHandler, Master};
 use tauri::{
-    Manager,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
+    Manager,
 };
 
 use std::io;
 use std::path::PathBuf;
-use std::sync::{OnceLock, Mutex};
+use std::sync::{Mutex, OnceLock};
 
 static APP_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 static PROCESSING_LOCK: Mutex<()> = Mutex::new(());
@@ -47,7 +47,8 @@ fn process_clipboard() {
             save_image(
                 image.width,
                 image.height,
-                image.bytes
+                image
+                    .bytes
                     .chunks(4)
                     .flat_map(|pixel| pixel[..3].to_vec())
                     .collect(),
@@ -55,7 +56,10 @@ fn process_clipboard() {
             );
 
             clipboard.clear().expect("Failed to clear clipboard");
-            clipboard.set().file_list(&[image_path]).expect("Failed to set clipboard file list");
+            clipboard
+                .set()
+                .file_list(&[image_path])
+                .expect("Failed to set clipboard file list");
         } else {
             log::info!("Image processing is already in progress, skipping.");
         }
@@ -99,10 +103,16 @@ pub fn run() {
     });
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::Builder::new().build())
         .setup(|app| {
             // Get app data directory
-            let dir = app.path().app_data_dir().expect("Failed to get app data directory");
-            APP_DATA_DIR.set(dir).expect("Failed to set app data directory");
+            let dir = app
+                .path()
+                .app_data_dir()
+                .expect("Failed to get app data directory");
+            APP_DATA_DIR
+                .set(dir)
+                .expect("Failed to set app data directory");
 
             // Initialize tray
             let settings_i = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
@@ -118,14 +128,8 @@ pub fn run() {
                     }
                     "settings" => {
                         log::info!("settings menu item was clicked");
-                        app.get_webview_window("main")
-                            .unwrap()
-                            .show()
-                            .unwrap();
-                        app.get_webview_window("main")
-                            .unwrap()
-                            .set_focus()
-                            .unwrap();
+                        app.get_webview_window("main").unwrap().show().unwrap();
+                        app.get_webview_window("main").unwrap().set_focus().unwrap();
                     }
                     _ => {
                         log::error!("menu item {:?} not handled", event.id);
@@ -135,10 +139,7 @@ pub fn run() {
                 .build(app)?;
             Ok(())
         })
-        .plugin(
-            tauri_plugin_log::Builder::new()
-                .build(),
-        )
+        .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
