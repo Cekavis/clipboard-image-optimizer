@@ -2,7 +2,7 @@ use arboard::Clipboard;
 use clipboard_master::{CallbackResult, ClipboardHandler, Master};
 use tauri::{
     menu::{Menu, MenuItem},
-    tray::TrayIconBuilder,
+    tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState},
     AppHandle, Emitter, Manager, PhysicalPosition,
 };
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
@@ -271,7 +271,7 @@ pub fn run() {
             let menu = Menu::with_items(app, &[&settings_i, &quit_i])?;
             let _tray = TrayIconBuilder::new()
                 .menu(&menu)
-                .show_menu_on_left_click(true)
+                .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => {
                         log::info!("quit menu item was clicked");
@@ -279,12 +279,31 @@ pub fn run() {
                     }
                     "settings" => {
                         log::info!("settings menu item was clicked");
-                        app.get_webview_window("main").unwrap().show().unwrap();
-                        app.get_webview_window("main").unwrap().set_focus().unwrap();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.unminimize();
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
                     }
                     _ => {
                         log::error!("menu item {:?} not handled", event.id);
                     }
+                })
+                .on_tray_icon_event(|tray, event| match event {
+                    TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } => {
+                        log::info!("left click pressed and released");
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.unminimize();
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    _ => {}
                 })
                 .icon(app.default_window_icon().unwrap().clone())
                 .build(app)?;
