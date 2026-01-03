@@ -12,9 +12,23 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Clipboard Image Optimizer",
         "width": 800,
         "height": 600
+      },
+      {
+        "label": "progress",
+        "title": "Optimizing...",
+        "url": "progress.html",
+        "width": 240,
+        "height": 80,
+        "resizable": false,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "transparent": true
       }
     ],
     "security": {

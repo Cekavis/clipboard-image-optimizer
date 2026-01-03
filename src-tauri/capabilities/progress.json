@@ -1,0 +1,11 @@
+{
+  "identifier": "progress",
+  "description": "The progress window",
+  "local": true,
+  "windows": [
+    "progress"
+  ],
+  "permissions": [
+    "core:event:allow-listen"
+  ]
+}
