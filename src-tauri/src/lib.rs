@@ -1,7 +1,10 @@
 use clipboard_master::{CallbackResult, ClipboardHandler, Master};
 use arboard::Clipboard;
-use tauri::Manager;
-use tauri::tray::TrayIconBuilder;
+use tauri::{
+    Manager,
+    menu::{Menu, MenuItem},
+    tray::TrayIconBuilder,
+};
 
 use std::io;
 use std::path::PathBuf;
@@ -102,7 +105,32 @@ pub fn run() {
             APP_DATA_DIR.set(dir).expect("Failed to set app data directory");
 
             // Initialize tray
+            let settings_i = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
+            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&settings_i, &quit_i])?;
             let _tray = TrayIconBuilder::new()
+                .menu(&menu)
+                .show_menu_on_left_click(true)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "quit" => {
+                        log::info!("quit menu item was clicked");
+                        app.exit(0);
+                    }
+                    "settings" => {
+                        log::info!("settings menu item was clicked");
+                        app.get_webview_window("main")
+                            .unwrap()
+                            .show()
+                            .unwrap();
+                        app.get_webview_window("main")
+                            .unwrap()
+                            .set_focus()
+                            .unwrap();
+                    }
+                    _ => {
+                        log::error!("menu item {:?} not handled", event.id);
+                    }
+                })
                 .icon(app.default_window_icon().unwrap().clone())
                 .build(app)?;
             Ok(())
@@ -112,6 +140,13 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                log::info!("Window close requested, hiding window instead.");
+                api.prevent_close();
+                window.hide().unwrap();
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
