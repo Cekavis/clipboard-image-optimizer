@@ -1,0 +1,23 @@
+<svg width="200" height="200" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 剪切板主体 -->
+  <path d="M16 4H18C19.1046 4 20 4.89543 20 6V20C20 21.1046 19.1046 22 18 22H6C4.89543 22 4 21.1046 4 20V6C4 4.89543 4.89543 4 6 4H8" 
+        stroke="#FFC131" 
+        stroke-width="1.5" 
+        stroke-linecap="round"/>
+  
+  <!-- 剪切板顶部夹子 -->
+  <path d="M8 4C8 2.89543 8.89543 2 10 2H14C15.1046 2 16 2.89543 16 4V5H8V4Z" 
+        stroke="#FFC131" 
+        stroke-width="1.5" 
+        stroke-linejoin="round"/>
+
+  <!-- 图像占位符内容 -->
+  <g>
+    <!-- 照片外框 -->
+    <rect x="7" y="9" width="10" height="8" rx="1" stroke="#24C8DB" stroke-width="1.2"/>
+    <!-- 山峰 -->
+    <path d="M7.5 15.5L10 12.5L12.5 15L14.5 13L16.5 15.5" stroke="#24C8DB" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- 太阳 -->
+    <circle cx="14" cy="11.5" r="1" fill="#24C8DB"/>
+  </g>
+</svg>

@@ -1,6 +1,7 @@
 use clipboard_master::{CallbackResult, ClipboardHandler, Master};
 use arboard::Clipboard;
 use tauri::Manager;
+use tauri::tray::TrayIconBuilder;
 
 use std::io;
 use std::path::PathBuf;
@@ -96,8 +97,14 @@ pub fn run() {
 
     tauri::Builder::default()
         .setup(|app| {
+            // Get app data directory
             let dir = app.path().app_data_dir().expect("Failed to get app data directory");
             APP_DATA_DIR.set(dir).expect("Failed to set app data directory");
+
+            // Initialize tray
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .build(app)?;
             Ok(())
         })
         .plugin(
