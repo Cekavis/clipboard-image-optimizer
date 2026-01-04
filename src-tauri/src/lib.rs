@@ -2,7 +2,7 @@ use arboard::Clipboard;
 use clipboard_master::{CallbackResult, ClipboardHandler, Master};
 use tauri::{
     menu::{Menu, MenuItem},
-    tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, PhysicalPosition,
 };
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
@@ -51,7 +51,10 @@ fn emit_optimization_start() {
 
 fn emit_optimization_complete(original_size: u64, new_size: u64) {
     if let Some(app) = APP_HANDLE.get() {
-        let _ = app.emit("optimization-complete", serde_json::json!({ "original_size": original_size, "new_size": new_size }));
+        let _ = app.emit(
+            "optimization-complete",
+            serde_json::json!({ "original_size": original_size, "new_size": new_size }),
+        );
     }
 }
 
@@ -137,7 +140,11 @@ fn process_clipboard() {
 
             {
                 let mut clipboard = CLIPBOARD.lock().unwrap();
-                clipboard.as_mut().unwrap().clear().expect("Failed to clear clipboard");
+                clipboard
+                    .as_mut()
+                    .unwrap()
+                    .clear()
+                    .expect("Failed to clear clipboard");
                 clipboard
                     .as_mut()
                     .unwrap()
@@ -187,7 +194,11 @@ fn revert_clipboard() {
     log::info!("Reverting clipboard to original image");
     let image = ORIGINAL_IMAGE.lock().unwrap();
     let mut clipboard = CLIPBOARD.lock().unwrap();
-    clipboard.as_mut().unwrap().clear().expect("Failed to clear clipboard");
+    clipboard
+        .as_mut()
+        .unwrap()
+        .clear()
+        .expect("Failed to clear clipboard");
     clipboard
         .as_mut()
         .unwrap()
@@ -240,6 +251,7 @@ pub fn run() {
     });
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec!["--hidden"]),

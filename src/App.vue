@@ -1,11 +1,67 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from "vue";
+import { ref, watch, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
+import { check, Update } from "@tauri-apps/plugin-updater";
 
 type Theme = "light" | "dark" | "auto";
+type UpdateStatus = "idle" | "checking" | "up-to-date" | "available" | "downloading" | "error";
 
 const autoStart = ref(false);
 const theme = ref<Theme>("auto");
+
+// Update-related state
+const currentVersion = ref("");
+const updateStatus = ref<UpdateStatus>("idle");
+const availableUpdate = ref<Update | null>(null);
+const updateError = ref("");
+const downloadProgress = ref(0);
+let updateCheckInterval: ReturnType<typeof setInterval> | null = null;
+
+// Check for updates
+async function checkForUpdates() {
+  updateStatus.value = "checking";
+  updateError.value = "";
+  
+  try {
+    const update = await check();
+    if (update) {
+      availableUpdate.value = update;
+      updateStatus.value = "available";
+    } else {
+      availableUpdate.value = null;
+      updateStatus.value = "up-to-date";
+    }
+  } catch (error) {
+    console.error("Failed to check for updates:", error);
+    updateError.value = String(error);
+    updateStatus.value = "error";
+  }
+}
+
+// Download and install update
+async function downloadAndInstall() {
+  if (!availableUpdate.value) return;
+  
+  updateStatus.value = "downloading";
+  downloadProgress.value = 0;
+  
+  try {
+    await availableUpdate.value.downloadAndInstall((event) => {
+      if (event.event === "Started" && event.data.contentLength) {
+        downloadProgress.value = 0;
+      } else if (event.event === "Progress") {
+        downloadProgress.value += event.data.chunkLength;
+      } else if (event.event === "Finished") {
+        downloadProgress.value = 100;
+      }
+    });
+  } catch (error) {
+    console.error("Failed to download/install update:", error);
+    updateError.value = String(error);
+    updateStatus.value = "error";
+  }
+}
 
 // Apply theme to document
 function applyTheme(selectedTheme: Theme) {
@@ -37,6 +93,13 @@ watch(autoStart, async (newValue) => {
 
 // Load saved settings on mount
 onMounted(async () => {
+  // Get current version
+  try {
+    currentVersion.value = await getVersion();
+  } catch (error) {
+    console.error("Failed to get version:", error);
+  }
+
   const savedTheme = localStorage.getItem("theme") as Theme | null;
   if (savedTheme) {
     theme.value = savedTheme;
@@ -56,6 +119,20 @@ onMounted(async () => {
       applyTheme("auto");
     }
   });
+
+  // Check for updates on startup
+  checkForUpdates();
+  
+  // Periodically check for updates (every 12 hours)
+  updateCheckInterval = setInterval(() => {
+    checkForUpdates();
+  }, 12 * 60 * 60 * 1000);
+});
+
+onUnmounted(() => {
+  if (updateCheckInterval) {
+    clearInterval(updateCheckInterval);
+  }
 });
 </script>
 
@@ -123,6 +200,58 @@ onMounted(async () => {
               <path d="M12 2a10 10 0 0 1 0 20"/>
             </svg>
           </button>
+        </div>
+      </div>
+
+      <!-- Version & Update setting -->
+      <div class="setting-item update-section">
+        <div class="setting-info">
+          <label>Version</label>
+          <span class="setting-description">
+            v{{ currentVersion }}
+            <span v-if="updateStatus === 'available' && availableUpdate" class="new-version">
+              → v{{ availableUpdate.version }} available
+            </span>
+          </span>
+        </div>
+        <div class="update-controls">
+          <!-- Check for updates button -->
+          <button 
+            v-if="updateStatus === 'idle' || updateStatus === 'up-to-date' || updateStatus === 'error'"
+            class="update-btn"
+            @click="checkForUpdates"
+          >
+            Check for updates
+          </button>
+          
+          <!-- Checking status -->
+          <span v-if="updateStatus === 'checking'" class="update-status checking">
+            <span class="spinner"></span> Checking...
+          </span>
+          
+          <!-- Up to date status -->
+          <span v-if="updateStatus === 'up-to-date'" class="update-status up-to-date">
+            ✓ Up to date
+          </span>
+          
+          <!-- Download & Install button -->
+          <button 
+            v-if="updateStatus === 'available'"
+            class="update-btn primary"
+            @click="downloadAndInstall"
+          >
+            Download & Install
+          </button>
+          
+          <!-- Downloading status -->
+          <span v-if="updateStatus === 'downloading'" class="update-status downloading">
+            <span class="spinner"></span> Downloading...
+          </span>
+          
+          <!-- Error status -->
+          <span v-if="updateStatus === 'error'" class="update-status error" :title="updateError">
+            ✗ Error
+          </span>
         </div>
       </div>
     </div>
@@ -253,6 +382,90 @@ h1 {
   background: var(--card-bg);
   color: var(--accent-color);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Update section */
+.update-section {
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.update-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.update-btn {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-color);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.update-btn:hover {
+  background: var(--toggle-bg);
+}
+
+.update-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.update-btn.primary {
+  background: var(--accent-color);
+  color: white;
+  border-color: var(--accent-color);
+}
+
+.update-btn.primary:hover {
+  opacity: 0.9;
+}
+
+.update-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+}
+
+.update-status.checking,
+.update-status.downloading {
+  color: var(--text-secondary);
+}
+
+.update-status.up-to-date {
+  color: #34c759;
+}
+
+.update-status.error {
+  color: #ff3b30;
+}
+
+.new-version {
+  color: var(--accent-color);
+  font-weight: 500;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--accent-color);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>
 
