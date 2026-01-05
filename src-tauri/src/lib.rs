@@ -1,5 +1,6 @@
 use arboard::Clipboard;
 use clipboard_master::{CallbackResult, ClipboardHandler, Master};
+use clipboard_win::raw;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -88,15 +89,25 @@ fn process_clipboard() {
     }
 
     // Get original size
-    let original_size = match file_list {
-        Ok(ref list) if list.len() == 1 => {
-            if let Ok(metadata) = std::fs::metadata(list[0].clone()) {
-                metadata.len()
-            } else {
-                0
-            }
+    let original_size = if let Ok(list) = &file_list {
+        if list.len() == 1 {
+            // Clipboard contains a single file path
+            std::fs::metadata(&list[0]).unwrap().len()
+        } else {
+            0
         }
-        _ => 0,
+    } else {
+        // Find the "image/jpeg" format in clipboard
+        let mut size: usize = 0;
+        let mut buf = [0u8; 16];
+        raw::open().expect("Failed to open clipboard");
+        let iter = raw::EnumFormats::new();
+        iter.for_each(|id| {
+            if raw::format_name(id, buf.as_mut_slice().into()) == Some("image/jpeg") {
+                size = raw::size(id).unwrap().get();
+            }
+        });
+        size as u64
     };
 
     // Skip if already optimized
