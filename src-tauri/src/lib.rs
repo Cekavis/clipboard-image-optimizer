@@ -74,6 +74,19 @@ impl ClipboardHandler for Handler {
     }
 }
 
+fn path_is_image(path: &PathBuf) -> bool {
+    if let Some(ext) = path.extension() {
+        let ext_lc = ext.to_string_lossy().to_lowercase();
+        return ext_lc == "png"
+            || ext_lc == "jpg"
+            || ext_lc == "jpeg"
+            || ext_lc == "bmp"
+            || ext_lc == "tiff"
+            || ext_lc == "webp";
+    }
+    false
+}
+
 fn process_clipboard() {
     // Get directory
     let app_data_dir = APP_DATA_DIR.get().expect("App data directory not set");
@@ -90,7 +103,7 @@ fn process_clipboard() {
 
     // Get original size
     let original_size = if let Ok(list) = &file_list {
-        if list.len() == 1 {
+        if list.len() == 1 && path_is_image(&list[0]) {
             // Clipboard contains a single file path
             std::fs::metadata(&list[0]).unwrap().len()
         } else {
@@ -111,67 +124,73 @@ fn process_clipboard() {
     };
 
     // Skip if already optimized
-    if let Ok(file_list) = file_list {
+    if let Ok(file_list) = &file_list {
         if file_list.len() == 1 && file_list[0].parent() == Some(app_data_dir) {
             log::info!("Skipping optimized image.");
             return;
         }
     }
 
-    // Process image
-    if let Ok(image) = image {
-        if let Ok(_guard) = PROCESSING_LOCK.try_lock() {
-            log::info!("Got image from clipboard: {}x{}", image.width, image.height);
-
-            // Store original image for potential revert
-            {
-                let mut original = ORIGINAL_IMAGE.lock().unwrap();
-                *original = Some(image.clone());
-            }
-
-            // Show progress window and emit start event
-            show_progress_window();
-            emit_optimization_start();
-
-            let image_path = app_data_dir.join("optimized.jpg");
-
-            save_image(
-                image.width,
-                image.height,
-                image
-                    .bytes
-                    .chunks(4)
-                    .flat_map(|pixel| pixel[..3].to_vec())
-                    .collect(),
-                &image_path,
-            );
-
-            // Get file size for display
-            let new_size = std::fs::metadata(&image_path).map(|m| m.len()).unwrap_or(0);
-
-            {
-                let mut clipboard = CLIPBOARD.lock().unwrap();
-                clipboard
-                    .as_mut()
-                    .unwrap()
-                    .clear()
-                    .expect("Failed to clear clipboard");
-                clipboard
-                    .as_mut()
-                    .unwrap()
-                    .set()
-                    .file_list(&[image_path.clone()])
-                    .expect("Failed to set clipboard file list");
-            }
-
-            // Emit completion event with file size
-            emit_optimization_complete(original_size, new_size);
-        } else {
-            log::info!("Image processing is already in progress, skipping.");
-        }
-    } else {
-        log::info!("Clipboard does not contain an image.");
+    // Allow only one processing at a time
+    let guard = PROCESSING_LOCK.try_lock();
+    if guard.is_err() {
+        log::info!("Image processing is already in progress, skipping.");
+        return;
     }
+
+    let mut width: usize = 0;
+    let mut height: usize = 0;
+    let mut bytes: Vec<u8> = Vec::new();
+
+    if let Ok(image) = image {
+        width = image.width;
+        height = image.height;
+        bytes = image
+            .bytes
+            .chunks(4)
+            .flat_map(|pixel| pixel[..3].to_vec())
+            .collect();
+        log::info!("Got image from clipboard: {}x{}", width, height);
+    } else {
+        if let Ok(file_list) = &file_list {
+            if file_list.len() == 1 && path_is_image(&file_list[0]) {
+                let img = image::open(&file_list[0]).expect("Failed to open image file");
+                let rgb_img = img.to_rgb8();
+                width = rgb_img.width() as usize;
+                height = rgb_img.height() as usize;
+                bytes = rgb_img.into_raw();
+                log::info!("Got image from file clipboard: {}x{}", width, height);
+            }
+        }
+    };
+
+    if width == 0 {
+        log::info!("No valid image found in clipboard, skipping.");
+        return;
+    }
+
+    // Show progress window and emit start event
+    show_progress_window();
+    emit_optimization_start();
+
+    let image_path = app_data_dir.join("optimized.jpg");
+    let new_size = save_image(width, height, bytes, &image_path);
+
+    let mut clipboard = CLIPBOARD.lock().unwrap();
+    clipboard
+        .as_mut()
+        .unwrap()
+        .clear()
+        .expect("Failed to clear clipboard");
+    clipboard
+        .as_mut()
+        .unwrap()
+        .set()
+        .file_list(&[image_path.clone()])
+        .expect("Failed to set clipboard file list");
+
+    // Emit completion event with file size
+    emit_optimization_complete(original_size, new_size);
 }
 
 #[tauri::command]
@@ -220,7 +239,8 @@ fn revert_clipboard() {
     hide_progress();
 }
 
-fn save_image(width: usize, height: usize, image_data: Vec<u8>, path: &PathBuf) {
+/// Encode the image and return the JPEG size
+fn save_image(width: usize, height: usize, image_data: Vec<u8>, path: &PathBuf) -> u64 {
     assert_eq!(image_data.len(), width * height * 3);
 
     let result = std::panic::catch_unwind(|| -> std::io::Result<Vec<u8>> {
@@ -238,11 +258,14 @@ fn save_image(width: usize, height: usize, image_data: Vec<u8>, path: &PathBuf) 
 
     match result {
         Ok(Ok(jpeg_data)) => {
+            let size = jpeg_data.len() as u64;
             std::fs::write(path, jpeg_data).expect("Failed to write JPEG file");
             log::info!("Optimized image saved to {:?}", path);
+            size
         }
         _ => {
             log::error!("Failed to compress image");
+            0
         }
     }
 }
