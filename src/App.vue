@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from "vue";
+import { ref, shallowRef, watch, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { check, Update } from "@tauri-apps/plugin-updater";
@@ -13,7 +13,7 @@ const theme = ref<Theme>("auto");
 // Update-related state
 const currentVersion = ref("");
 const updateStatus = ref<UpdateStatus>("idle");
-const availableUpdate = ref<Update | null>(null);
+const availableUpdate = shallowRef<Update | null>(null);
 const updateError = ref("");
 const downloadProgress = ref(0);
 let updateCheckInterval: ReturnType<typeof setInterval> | null = null;
