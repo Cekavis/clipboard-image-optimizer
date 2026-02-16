@@ -211,6 +211,13 @@ fn get_auto_start(app: tauri::AppHandle) -> Result<bool, String> {
 }
 
 #[tauri::command]
+fn show_main_window(window: tauri::Window) {
+    let _ = window.unminimize();
+    let _ = window.show();
+    let _ = window.set_focus();
+}
+
+#[tauri::command]
 fn hide_progress() {
     if let Some(app) = APP_HANDLE.get() {
         if let Some(window) = app.get_webview_window("progress") {
@@ -288,13 +295,14 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
-            Some(vec!["--hidden"]),
+            Some(vec![]),
         ))
         .invoke_handler(tauri::generate_handler![
             set_auto_start,
             get_auto_start,
             hide_progress,
-            revert_clipboard
+            revert_clipboard,
+            show_main_window
         ])
         .setup(|app| {
             // Store app handle for use in clipboard handler

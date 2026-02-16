@@ -8,6 +8,7 @@ type Theme = "light" | "dark" | "auto";
 type UpdateStatus = "idle" | "checking" | "up-to-date" | "available" | "downloading" | "error";
 
 const autoStart = ref(false);
+const silentStart = ref(false);
 const theme = ref<Theme>("auto");
 
 // Update-related state
@@ -91,6 +92,11 @@ watch(autoStart, async (newValue) => {
   }
 });
 
+// Watch for silent start changes
+watch(silentStart, (newValue) => {
+  localStorage.setItem("silentStart", String(newValue));
+});
+
 // Load saved settings on mount
 onMounted(async () => {
   // Get current version
@@ -105,6 +111,25 @@ onMounted(async () => {
     theme.value = savedTheme;
   }
   applyTheme(theme.value);
+
+  // Load silent start preference
+  const savedSilentStart = localStorage.getItem("silentStart");
+  if (savedSilentStart) {
+    silentStart.value = savedSilentStart === "true";
+  }
+
+  // Check if silent start is enabled
+  try {
+    if (!silentStart.value) {
+      // If silent start is disabled, show window
+      await invoke("show_main_window");
+    }
+    // Else: remain hidden as requested
+  } catch (error) {
+    console.error("Failed to check silent start:", error);
+    // Fallback: show window if error
+    await invoke("show_main_window");
+  }
 
   // Load autostart state from the system
   try {
@@ -152,6 +177,23 @@ onUnmounted(() => {
             type="checkbox" 
             id="auto-start" 
             v-model="autoStart"
+          />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <!-- Silent start setting -->
+      <div class="setting-item">
+        <div class="setting-info">
+          <label for="silent-start">Silent start</label>
+          <span class="setting-description">Start minimized to tray when auto-starting</span>
+        </div>
+        <label class="toggle">
+          <input 
+            type="checkbox" 
+            id="silent-start" 
+            v-model="silentStart"
+            :disabled="!autoStart"
           />
           <span class="toggle-slider"></span>
         </label>
