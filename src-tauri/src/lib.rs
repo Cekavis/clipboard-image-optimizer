@@ -1,6 +1,9 @@
 use arboard::Clipboard;
 use clipboard_master::{CallbackResult, ClipboardHandler, Master};
-use clipboard_win::raw;
+use clipboard_win::{
+    formats::{CF_DIBV5, CF_HDROP},
+    raw, Clipboard as WindowsClipboard,
+};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -87,7 +90,38 @@ fn path_is_image(path: &PathBuf) -> bool {
     false
 }
 
+fn registered_format_available(name: &str) -> Option<u32> {
+    raw::register_format(name)
+        .map(u32::from)
+        .filter(|format| raw::is_format_avail(*format))
+}
+
+fn clipboard_has_image_candidate() -> bool {
+    raw::is_format_avail(CF_HDROP)
+        || raw::is_format_avail(CF_DIBV5)
+        || registered_format_available("PNG").is_some()
+        || registered_format_available("image/jpeg").is_some()
+}
+
+fn jpeg_clipboard_size() -> u64 {
+    let Some(format) = registered_format_available("image/jpeg") else {
+        return 0;
+    };
+
+    let Ok(_clipboard) = WindowsClipboard::new_attempts(5) else {
+        log::warn!("Failed to open clipboard to read JPEG size");
+        return 0;
+    };
+
+    raw::size(format).map(|size| size.get() as u64).unwrap_or(0)
+}
+
 fn process_clipboard() {
+    if !clipboard_has_image_candidate() {
+        log::info!("Clipboard does not contain an image, skipping.");
+        return;
+    }
+
     // Get directory
     let app_data_dir = APP_DATA_DIR.get().expect("App data directory not set");
     std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data directory");
@@ -105,22 +139,14 @@ fn process_clipboard() {
     let original_size = if let Ok(list) = &file_list {
         if list.len() == 1 && path_is_image(&list[0]) {
             // Clipboard contains a single file path
-            std::fs::metadata(&list[0]).unwrap().len()
+            std::fs::metadata(&list[0])
+                .map(|metadata| metadata.len())
+                .unwrap_or(0)
         } else {
             0
         }
     } else {
-        // Find the "image/jpeg" format in clipboard
-        let mut size: usize = 0;
-        let mut buf = [0u8; 16];
-        raw::open().expect("Failed to open clipboard");
-        let iter = raw::EnumFormats::new();
-        iter.for_each(|id| {
-            if raw::format_name(id, buf.as_mut_slice().into()) == Some("image/jpeg") {
-                size = raw::size(id).unwrap().get();
-            }
-        });
-        size as u64
+        jpeg_clipboard_size()
     };
 
     // Skip if already optimized

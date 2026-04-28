@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Clipboard Image Optimizer",
-  "version": "0.2.0",
+  "version": "../package.json",
   "identifier": "com.clipboard-image-optimizer.app",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:11420",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
