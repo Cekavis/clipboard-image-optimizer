@@ -1,7 +1,7 @@
 use arboard::Clipboard;
 use clipboard_master::{CallbackResult, ClipboardHandler, Master};
 use clipboard_win::{
-    formats::{CF_DIBV5, CF_HDROP},
+    formats::{CF_DIB, CF_DIBV5, CF_HDROP, CF_TIFF},
     raw, Clipboard as WindowsClipboard,
 };
 use tauri::{
@@ -103,17 +103,40 @@ fn clipboard_has_image_candidate() -> bool {
         || registered_format_available("image/jpeg").is_some()
 }
 
-fn jpeg_clipboard_size() -> u64 {
-    let Some(format) = registered_format_available("image/jpeg") else {
-        return 0;
-    };
+fn clipboard_format_size(format: u32) -> Option<u64> {
+    raw::size(format).map(|size| size.get() as u64)
+}
 
+fn registered_clipboard_size(name: &str) -> Option<u64> {
+    registered_format_available(name).and_then(clipboard_format_size)
+}
+
+fn clipboard_image_size() -> u64 {
     let Ok(_clipboard) = WindowsClipboard::new_attempts(5) else {
-        log::warn!("Failed to open clipboard to read JPEG size");
+        log::warn!("Failed to open clipboard to read image size");
         return 0;
     };
 
-    raw::size(format).map(|size| size.get() as u64).unwrap_or(0)
+    // Prefer encoded payloads over decoded bitmap formats; apps such as WeChat
+    // often publish both, and DIB would overstate the original compressed image.
+    [
+        registered_clipboard_size("image/jpeg"),
+        registered_clipboard_size("image/jpg"),
+        registered_clipboard_size("JPEG"),
+        registered_clipboard_size("JPG"),
+        registered_clipboard_size("JFIF"),
+        registered_clipboard_size("image/webp"),
+        registered_clipboard_size("WebP"),
+        registered_clipboard_size("PNG"),
+        registered_clipboard_size("image/png"),
+        clipboard_format_size(CF_TIFF),
+        clipboard_format_size(CF_DIBV5),
+        clipboard_format_size(CF_DIB),
+    ]
+    .into_iter()
+    .flatten()
+    .next()
+    .unwrap_or(0)
 }
 
 fn process_clipboard() {
@@ -143,10 +166,10 @@ fn process_clipboard() {
                 .map(|metadata| metadata.len())
                 .unwrap_or(0)
         } else {
-            0
+            clipboard_image_size()
         }
     } else {
-        jpeg_clipboard_size()
+        clipboard_image_size()
     };
 
     // Skip if already optimized
