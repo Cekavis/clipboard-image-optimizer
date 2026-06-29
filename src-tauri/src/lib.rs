@@ -12,8 +12,9 @@ use tauri::{
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 static APP_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
@@ -222,7 +223,7 @@ fn process_clipboard() {
     show_progress_window();
     emit_optimization_start();
 
-    let image_path = app_data_dir.join("optimized.jpg");
+    let image_path = next_optimized_image_path(app_data_dir);
     let new_size = save_image(width, height, bytes, &image_path);
 
     let mut clipboard = CLIPBOARD.lock().unwrap();
@@ -295,6 +296,57 @@ fn revert_clipboard() {
     hide_progress();
 }
 
+fn next_optimized_image_path(app_data_dir: &Path) -> PathBuf {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+
+    optimized_image_path_for_timestamp(app_data_dir, timestamp)
+}
+
+fn optimized_image_path_for_timestamp(app_data_dir: &Path, timestamp: u128) -> PathBuf {
+    for suffix in 0..=u32::MAX {
+        let file_name = if suffix == 0 {
+            format!("optimized-{timestamp}.jpg")
+        } else {
+            format!("optimized-{timestamp}-{suffix}.jpg")
+        };
+        let path = app_data_dir.join(file_name);
+        if !path.exists() {
+            return path;
+        }
+    }
+
+    panic!("Failed to allocate optimized image file name");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn optimized_image_path_uses_unique_file_names() {
+        let test_dir = std::env::temp_dir().join(format!(
+            "clipboard-image-optimizer-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&test_dir);
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let first_path = optimized_image_path_for_timestamp(&test_dir, 12345);
+        assert_eq!(first_path, test_dir.join("optimized-12345.jpg"));
+        fs::write(&first_path, b"existing").unwrap();
+
+        let second_path = optimized_image_path_for_timestamp(&test_dir, 12345);
+        assert_eq!(second_path, test_dir.join("optimized-12345-1.jpg"));
+        assert!(first_path.exists());
+
+        fs::remove_dir_all(test_dir).unwrap();
+    }
+}
+
 /// Encode the image and return the JPEG size
 fn save_image(width: usize, height: usize, image_data: Vec<u8>, path: &PathBuf) -> u64 {
     assert_eq!(image_data.len(), width * height * 3);
@@ -341,6 +393,13 @@ pub fn run() {
     });
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
@@ -373,6 +432,7 @@ pub fn run() {
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&settings_i, &quit_i])?;
             let _tray = TrayIconBuilder::new()
+                .tooltip("Clipboard Image Optimizer")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
